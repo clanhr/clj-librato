@@ -47,6 +47,10 @@
 
 (defn collate [user api-key gauges counters]
   "Posts a set of gauges and counters."
+  (assert (every? :name gauges))
+  (assert (every? :name counters))
+  (assert (every? :value gauges))
+  (assert (every? :value counters))
   (client/post (uri "metrics")
                (request user api-key {} {:gauges gauges :counters counters})))
 

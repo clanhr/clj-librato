@@ -22,6 +22,20 @@
                 {"hello_there" [{"tiny_kitten" 3}]})))
 
 (deftest collate-test
+         (testing "reject nil names"
+                  (is (thrown? java.lang.AssertionError
+                               (collate user apikey [{:name nil}] [])))
+                  (is (thrown? java.lang.AssertionError
+                               (collate user apikey [] [{:name nil}]))))
+
+         (testing "reject nil values"
+                  (is (thrown? java.lang.AssertionError
+                               (collate user apikey [{:name "foo"
+                                                      :value nil}] [])))
+                  (is (thrown? java.lang.AssertionError
+                               (collate user apikey [] [{:name "foo"
+                                                         :value nil}]))))
+
          (testing "gauge"
                   (let [gauge {:name "test.gauge"
                                :source "clj-librato"
