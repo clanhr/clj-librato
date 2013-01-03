@@ -1,6 +1,6 @@
 # clj-librato
 
-A Clojure library for interacting with [Librato Metrics](https://metrics.librato.com).  Currently at version 0.0.1, and focusing on sending collated metrics.
+A Clojure library for interacting with [Librato Metrics](https://metrics.librato.com). Currently maintained by aphyr (https://github.com/aphyr/clj-librato).
 
 Feel free to contribute!
 
