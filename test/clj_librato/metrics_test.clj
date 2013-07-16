@@ -39,7 +39,7 @@
          (testing "gauge"
                   (let [gauge {:name "test.gauge"
                                :source "clj-librato"
-                               :value (rand)
+                               :value (/ (rand-int 1000) (rand-int 1000))
                                :measure-time (now)}]
                     ; Submit gauge
                     (collate user apikey [gauge] [])
@@ -57,7 +57,7 @@
                       (is (= (:type metric) "gauge"))
                       (is m)
                       (is (= (:measure-time m) (:measure-time gauge)))
-                      (is (= (:value m) (:value gauge)))
+                      (is (= (:value m) (double (:value gauge))))
                       (is (= (:count m) 1)))
                   )))
 
