@@ -1,6 +1,6 @@
 (ns clj-librato.metrics
   (:use [slingshot.slingshot :only [try+]])
-  (:require [clj-json.core   :as json]
+  (:require [cheshire.core   :as json]
             [clj-http.client :as client]
             [clojure.string  :as string]
             clj-http.util))
