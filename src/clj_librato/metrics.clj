@@ -2,6 +2,7 @@
   (:use [slingshot.slingshot :only [try+]])
   (:require [cheshire.core   :as json]
             [clj-http.client :as client]
+            [clj-http.conn-mgr :as conn-mgr]
             [clojure.string  :as string]
             clj-http.util))
 
@@ -10,8 +11,8 @@
 (defn uri
   "The full URI of a particular resource, by path fragments."
   [& path-fragments]
-  (apply str uri-base 
-         (interpose "/" (map (comp clj-http.util/url-encode str) 
+  (apply str uri-base
+         (interpose "/" (map (comp clj-http.util/url-encode str)
                              path-fragments))))
 
 (defn unparse-kw
@@ -19,9 +20,9 @@
   Recursive."
   [m]
   (cond
-    (map? m) (into {} (map (fn [[k v]] 
-                             [(string/replace (name k) "-" "_") 
-                              (unparse-kw v)]) 
+    (map? m) (into {} (map (fn [[k v]]
+                             [(string/replace (name k) "-" "_")
+                              (unparse-kw v)])
                            m))
     (coll? m) (map unparse-kw m)
     true m))
@@ -32,40 +33,53 @@
   [m]
   (into {} (map (fn [[k v]] [(keyword (string/replace k "_" "-")) v]) m)))
 
+(defn connection-manager
+  "Return a connection manager that can be passed as :connection-manager in
+  a request."
+  [{:keys [timeout threads] :or {timeout 10 threads 2} :as options}]
+  (conn-mgr/make-reusable-conn-manager
+   (merge {:timeout timeout :threads threads :default-per-route threads}
+          options)))
+
 (defn request
-  "Constructs the HTTP client request map."
-  ([user api-key params]
-   {:basic-auth [user api-key]
-    :content-type :json
-    :accept :json
-    :throw-entire-message? true
-    :query-params (unparse-kw params)})
-   
-  ([user api-key params body]
-   (assoc (request user api-key params)
+  "Constructs the HTTP client request map.
+  options will be merged verbatim into the request map."
+  ([user api-key params options]
+   {:pre [(or (nil? options)(map? options))]}
+     (merge
+      options
+      {:basic-auth [user api-key]
+       :content-type :json
+       :accept :json
+       :throw-entire-message? true
+       :query-params (unparse-kw params)}))
+
+  ([user api-key params body options]
+   (assoc (request user api-key params options)
           :body (json/generate-string (unparse-kw body)))))
 
-(defn collate [user api-key gauges counters]
-  "Posts a set of gauges and counters."
+(defn collate [user api-key gauges counters options]
+  "Posts a set of gauges and counters. options is a map of clj-http options."
   (assert (every? :name gauges))
   (assert (every? :name counters))
   (assert (every? :value gauges))
   (assert (every? :value counters))
   (client/post (uri "metrics")
-               (request user api-key {} {:gauges gauges :counters counters})))
+               (request user api-key {} {:gauges gauges :counters counters}
+                        options)))
 
 (defn metric
   "Gets a metric by name.
-  
+
   See http://dev.librato.com/v1/get/metrics"
   ([user api-key name]
-   (metric user api-key name {}))
+   (metric user api-key name {} nil))
 
-  ([user api-key name params]
+  ([user api-key name params options]
    (assert name)
    (try+
      (let [body (-> (client/get (uri "metrics" name)
-                                (request user api-key params))
+                                (request user api-key params options))
                   :body json/parse-string parse-kw)]
        (assoc body :measurements
               (into {} (map (fn [[source measurements]]
@@ -77,43 +91,45 @@
 
 (defn create-annotation
   "Creates a new annotation, and returns the created annotation as a map.
-  
+
   http://dev.librato.com/v1/post/annotations/:name"
-  [user api-key name annotation]
+  [user api-key name annotation options]
+  {:pre [(or (nil? options)(map? options))]}
   (assert name)
   (-> (client/post (uri "annotations" name)
-                   (request user api-key {} annotation))
+                   (request user api-key {} annotation options))
     :body
     json/parse-string
     parse-kw))
 
 (defn update-annotation
   "Updates an annotation.
-  
+
   http://dev.librato.com/v1/put/annotations/:name/events/:id"
-  [user api-key name id annotation]
+  [user api-key name id annotation options]
   (assert name)
   (assert id)
   (client/put (uri "annotations" name id)
-              (request user api-key {} annotation)))
+              (request user api-key {} annotation options)))
 
 (defn annotate
   "Creates or updates an annotation. If id is given, updates. If id is
   missing, creates a new annotation."
-  ([user api-key name annotation]
-   (create-annotation user api-key name annotation))
-  ([user api-key name id annotation]
-   (update-annotation user api-key name id annotation)))
+  ([user api-key name annotation options]
+   (create-annotation user api-key name annotation options))
+  ([user api-key name id annotation options]
+   (update-annotation user api-key name id annotation options)))
 
 (defn annotation
   "Find a particular annotation event.
 
   See http://dev.librato.com/v1/get/annotations/:name/events/:id"
-  [user api-key name id]
+  [user api-key name id options]
   (assert name)
   (assert id)
   (try+
-    (-> (client/get (uri "annotations" name id) (request user api-key {}))
+    (-> (client/get (uri "annotations" name id)
+                   (request user api-key {} options))
       :body
       json/parse-string
       parse-kw)
