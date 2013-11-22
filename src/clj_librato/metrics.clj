@@ -4,6 +4,7 @@
             [clj-http.client :as client]
             [clj-http.conn-mgr :as conn-mgr]
             [clojure.string  :as string]
+            [clojure.tools.logging :as logging]
             clj-http.util))
 
 (def uri-base "https://metrics-api.librato.com/v1/")
@@ -44,29 +45,30 @@
 (defn request
   "Constructs the HTTP client request map.
   options will be merged verbatim into the request map."
-  ([user api-key params options]
-   {:pre [(or (nil? options)(map? options))]}
-     (merge
-      options
-      {:basic-auth [user api-key]
-       :content-type :json
-       :accept :json
-       :throw-entire-message? true
-       :query-params (unparse-kw params)}))
+  ([user api-key params]
+   {:basic-auth [user api-key]
+    :content-type :json
+    :accept :json
+    :throw-entire-message? true
+    :query-params (unparse-kw params)})
+  ([user api-key params body]
+   (assoc (request user api-key params)
+     :body (json/generate-string (unparse-kw body)))))
 
-  ([user api-key params body options]
-   (assoc (request user api-key params options)
-          :body (json/generate-string (unparse-kw body)))))
-
-(defn collate [user api-key gauges counters options]
+(defn collate
   "Posts a set of gauges and counters. options is a map of clj-http options."
-  (assert (every? :name gauges))
-  (assert (every? :name counters))
-  (assert (every? :value gauges))
-  (assert (every? :value counters))
-  (client/post (uri "metrics")
-               (request user api-key {} {:gauges gauges :counters counters}
-                        options)))
+  ([user api-key gauges counters]
+     (collate user api-key gauges counters nil))
+  ([user api-key gauges counters options]
+     (assert (every? :name gauges))
+     (assert (every? :name counters))
+     (assert (every? :value gauges))
+     (assert (every? :value counters))
+     (client/post (uri "metrics")
+                  (merge
+                   options
+                   (request user api-key {}
+                            {:gauges gauges :counters counters})))))
 
 (defn metric
   "Gets a metric by name.
@@ -74,12 +76,16 @@
   See http://dev.librato.com/v1/get/metrics"
   ([user api-key name]
    (metric user api-key name {} nil))
+  ([user api-key name params]
+   (metric user api-key name params nil))
 
   ([user api-key name params options]
    (assert name)
    (try+
      (let [body (-> (client/get (uri "metrics" name)
-                                (request user api-key params options))
+                                (merge
+                                 options
+                                 (request user api-key params)))
                   :body json/parse-string parse-kw)]
        (assoc body :measurements
               (into {} (map (fn [[source measurements]]
@@ -93,44 +99,68 @@
   "Creates a new annotation, and returns the created annotation as a map.
 
   http://dev.librato.com/v1/post/annotations/:name"
-  [user api-key name annotation options]
-  {:pre [(or (nil? options)(map? options))]}
-  (assert name)
-  (-> (client/post (uri "annotations" name)
-                   (request user api-key {} annotation options))
-    :body
-    json/parse-string
-    parse-kw))
+  ([user api-key name annotation]
+     (create-annotation user api-key name annotation))
+  ([user api-key name annotation options]
+     {:pre [(or (nil? options)(map? options))]}
+     (assert name)
+     (-> (client/post (uri "annotations" name)
+                      (merge
+                       options
+                       (request user api-key {} annotation)))
+         :body
+         json/parse-string
+         parse-kw)))
 
 (defn update-annotation
   "Updates an annotation.
 
   http://dev.librato.com/v1/put/annotations/:name/events/:id"
-  [user api-key name id annotation options]
-  (assert name)
-  (assert id)
-  (client/put (uri "annotations" name id)
-              (request user api-key {} annotation options)))
-
-(defn annotate
-  "Creates or updates an annotation. If id is given, updates. If id is
-  missing, creates a new annotation."
-  ([user api-key name annotation options]
-   (create-annotation user api-key name annotation options))
+  ([user api-key name id annotation]
+     (update-annotation user api-key name id annotation nil))
   ([user api-key name id annotation options]
-   (update-annotation user api-key name id annotation options)))
+     (assert name)
+     (assert id)
+     (client/put (uri "annotations" name id)
+                 (merge
+                  options
+                  (request user api-key {} annotation)))))
+
+(let [warn-on-deprecate (atom true)]
+  ;; Deprecated due to argument ambiguity.
+  ;; A future version could rename create-annotation as annotate.
+  (defn annotate
+    "Creates or updates an annotation. If id is given, updates. If id is
+    missing, creates a new annotation."
+    ([user api-key name annotation]
+       (create-annotation user api-key name annotation nil))
+    ([user api-key name annotation options]
+       (if (map? annotation)
+         (create-annotation user api-key name annotation options)
+         (do
+           ;; user api-key name id annotation
+           (update-annotation user api-key name annotation options)
+           (when @warn-on-deprecate
+             (reset! warn-on-deprecate false)
+             (logging/warn
+              (str "`annotate` called for annotation update is deprecated. "
+                   "Please use update-annotation."))))))))
 
 (defn annotation
   "Find a particular annotation event.
 
   See http://dev.librato.com/v1/get/annotations/:name/events/:id"
-  [user api-key name id options]
-  (assert name)
-  (assert id)
-  (try+
-    (-> (client/get (uri "annotations" name id)
-                   (request user api-key {} options))
-      :body
-      json/parse-string
-      parse-kw)
-    (catch [:status 404] _ nil)))
+  ([user api-key name id]
+     (annotation user api-key name id nil))
+  ([user api-key name id options]
+     (assert name)
+     (assert id)
+     (try+
+      (-> (client/get (uri "annotations" name id)
+                      (merge
+                       options
+                       (request user api-key {})))
+          :body
+          json/parse-string
+          parse-kw)
+      (catch [:status 404] _ nil))))
