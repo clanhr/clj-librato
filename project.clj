@@ -1,4 +1,4 @@
-(defproject clj-librato "0.0.4-SHAPSHOT"
+(defproject clj-librato "0.0.4-SNAPSHOT"
   :description "Clojure interface to the Librato service"
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [org.clojure/tools.logging "0.2.6"]
