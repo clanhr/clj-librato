@@ -100,7 +100,7 @@
 
   http://dev.librato.com/v1/post/annotations/:name"
   ([user api-key name annotation]
-     (create-annotation user api-key name annotation))
+     (create-annotation user api-key name annotation nil))
   ([user api-key name annotation options]
      {:pre [(or (nil? options)(map? options))]}
      (assert name)
