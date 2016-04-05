@@ -4,7 +4,6 @@
             [clj-http.client :as client]
             [clj-http.conn-mgr :as conn-mgr]
             [clojure.string  :as string]
-            [clojure.tools.logging :as logging]
             clj-http.util))
 
 (def uri-base "https://metrics-api.librato.com/v1/")
@@ -142,7 +141,7 @@
            (update-annotation user api-key name annotation options)
            (when @warn-on-deprecate
              (reset! warn-on-deprecate false)
-             (logging/warn
+             (prn
               (str "`annotate` called for annotation update is deprecated. "
                    "Please use update-annotation."))))))))
 
